@@ -1,70 +1,145 @@
-import os, boto3
+# type: ignore
+"""Tests for Lambda DynamoDB function using mocked AWS services."""
+import os
+import sys
+import boto3
+import importlib.util
+from typing import TYPE_CHECKING
 from fastapi.testclient import TestClient
 from moto import mock_aws
-import sys
 
-# Set AWS region before importing app
+if TYPE_CHECKING:
+    from mypy_boto3_dynamodb.service_resource import DynamoDBServiceResource
+
+# Set AWS region and mock credentials before importing app
 os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
+os.environ['AWS_ACCESS_KEY_ID'] = 'testing'
+os.environ['AWS_SECRET_ACCESS_KEY'] = 'testing'
+os.environ['AWS_SECURITY_TOKEN'] = 'testing'
+os.environ['AWS_SESSION_TOKEN'] = 'testing'
+os.environ['TABLE_NAME'] = 'ItemsTable'
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lambda-dynamo'))
-from app import app  # our FastAPI app for Dynamo
+
+def _load_dynamo_app():
+    """Load the DynamoDB app module dynamically to avoid import conflicts."""
+    app_path = os.path.join(os.path.dirname(__file__), '..', 'lambda-dynamo', 'app.py')
+    spec = importlib.util.spec_from_file_location("dynamo_app", app_path)
+    module = importlib.util.module_from_spec(spec)  # type: ignore
+    spec.loader.exec_module(module)  # type: ignore
+    return module.app
+
 
 @mock_aws
 def test_create_item():
-    # Set up mock AWS credentials
-    os.environ['AWS_ACCESS_KEY_ID'] = 'testing'
-    os.environ['AWS_SECRET_ACCESS_KEY'] = 'testing'
-    os.environ['AWS_SECURITY_TOKEN'] = 'testing'
-    os.environ['AWS_SESSION_TOKEN'] = 'testing'
-    
-    # Set up in-memory DynamoDB
-    dynamodb = boto3.resource('dynamodb')
-    # Create table that our code will use
-    dynamodb.create_table(
-        TableName="ItemsTable",
-        KeySchema=[{"AttributeName": "id", "KeyType": "HASH"}],
-        AttributeDefinitions=[{"AttributeName": "id", "AttributeType": "S"}],
+    """Test creating an item in DynamoDB via the FastAPI endpoint."""
+    # Set up in-memory DynamoDB table
+    dynamodb = boto3.resource('dynamodb')  # type: ignore[misc]
+    dynamodb.create_table(  # type: ignore[attr-defined]
+        TableName='ItemsTable',
+        KeySchema=[{'AttributeName': 'id', 'KeyType': 'HASH'}],
+        AttributeDefinitions=[{'AttributeName': 'id', 'AttributeType': 'S'}],
         BillingMode='PAY_PER_REQUEST'
     )
-    os.environ["TABLE_NAME"] = "ItemsTable"
     
-    # Reinitialize app's dynamodb resource to use the mock
-    import importlib
-    import app as app_module
-    importlib.reload(app_module)
+    # Import app after mock is set up
+    app = _load_dynamo_app()
     
-    client = TestClient(app_module.app)
-    # Call the POST /items endpoint
-    item_data = {"id": "test1", "value": "hello"}
-    resp = client.post("/items", json=item_data)
+    client = TestClient(app)
+    
+    # Test POST /items endpoint
+    item_data = {'id': 'test1', 'value': 'hello'}
+    resp = client.post('/items', json=item_data)
     assert resp.status_code == 200
+    assert 'message' in resp.json()
+    
     # Verify the item was written to DynamoDB
-    table = dynamodb.Table("ItemsTable")
-    result = table.get_item(Key={"id": "test1"})
-    assert "Item" in result and result["Item"]["value"] == "hello"
+    table = dynamodb.Table('ItemsTable')  # type: ignore[attr-defined]
+    result = table.get_item(Key={'id': 'test1'})
+    assert 'Item' in result
+    assert result['Item']['value'] == 'hello'
 
-def test_full_flow_localstack():
-    """
-    This test is designed for LocalStack integration testing.
-    To run this test, you need to have LocalStack running on localhost:4566
-    and uncomment the code below.
-    """
-    pass
-    # Uncomment below when LocalStack is available:
-    # dyn_resource = boto3.resource('dynamodb', endpoint_url="http://localhost:4566")
-    # s3_client = boto3.client('s3', endpoint_url="http://localhost:4566")
-    # # Set up resources on LocalStack
-    # dyn_resource.create_table(
-    #     TableName="ItemsTable",
-    #     KeySchema=[{"AttributeName": "id", "KeyType": "HASH"}],
-    #     AttributeDefinitions=[{"AttributeName": "id", "AttributeType": "S"}],
-    #     BillingMode='PAYPERREQUEST'
-    # )
-    # s3_client.create_bucket(Bucket="my-demo-bucket")
-    # # Inject env vars so our app uses localstack and resource names
-    # os.environ["TABLE_NAME"] = "ItemsTable"
-    # os.environ["BUCKET_NAME"] = "my-demo-bucket"
-    # client = TestClient(app)
-    # # Perform operations
-    # client.post("/items", json={"id": "123", "value": "foo"})
-    # client.put("/items/123", json={"value": "bar"})
+
+@mock_aws
+def test_update_item():
+    """Test updating an item in DynamoDB via the FastAPI endpoint."""
+    # Set up in-memory DynamoDB table
+    dynamodb = boto3.resource('dynamodb')  # type: ignore[misc]
+    dynamodb.create_table(  # type: ignore[attr-defined]
+        TableName='ItemsTable',
+        KeySchema=[{'AttributeName': 'id', 'KeyType': 'HASH'}],
+        AttributeDefinitions=[{'AttributeName': 'id', 'AttributeType': 'S'}],
+        BillingMode='PAY_PER_REQUEST'
+    )
+    
+    # Insert initial item
+    table = dynamodb.Table('ItemsTable')  # type: ignore[attr-defined]
+    table.put_item(Item={'id': 'test2', 'value': 'initial'})
+    
+    # Import app after mock is set up
+    app = _load_dynamo_app()
+    
+    client = TestClient(app)
+    
+    # Test PUT /items/{item_id} endpoint
+    update_data = {'value': 'updated'}
+    resp = client.put('/items/test2', json=update_data)
+    assert resp.status_code == 200
+    assert 'message' in resp.json()
+    
+    # Verify the item was updated
+    result = table.get_item(Key={'id': 'test2'})
+    assert 'Item' in result
+    assert result['Item']['value'] == 'updated'
+
+
+@mock_aws
+def test_get_item():
+    """Test retrieving an item from DynamoDB via the FastAPI endpoint."""
+    # Set up in-memory DynamoDB table
+    dynamodb = boto3.resource('dynamodb')  # type: ignore[misc]
+    dynamodb.create_table(  # type: ignore[attr-defined]
+        TableName='ItemsTable',
+        KeySchema=[{'AttributeName': 'id', 'KeyType': 'HASH'}],
+        AttributeDefinitions=[{'AttributeName': 'id', 'AttributeType': 'S'}],
+        BillingMode='PAY_PER_REQUEST'
+    )
+    
+    # Insert test item
+    table = dynamodb.Table('ItemsTable')  # type: ignore[attr-defined]
+    table.put_item(Item={'id': 'test3', 'value': 'retrieve_me'})
+    
+    # Import app after mock is set up
+    app = _load_dynamo_app()
+    
+    client = TestClient(app)
+    
+    # Test GET /items/{item_id} endpoint
+    resp = client.get('/items/test3')
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data['id'] == 'test3'
+    assert data['value'] == 'retrieve_me'
+
+
+@mock_aws
+def test_get_item_not_found():
+    """Test retrieving a non-existent item returns 404."""
+    # Set up in-memory DynamoDB table
+    dynamodb = boto3.resource('dynamodb')  # type: ignore[misc]
+    dynamodb.create_table(  # type: ignore[attr-defined]
+        TableName='ItemsTable',
+        KeySchema=[{'AttributeName': 'id', 'KeyType': 'HASH'}],
+        AttributeDefinitions=[{'AttributeName': 'id', 'AttributeType': 'S'}],
+        BillingMode='PAY_PER_REQUEST'
+    )
+    
+    # Import app after mock is set up
+    app = _load_dynamo_app()
+    
+    client = TestClient(app)
+    
+    # Test GET for non-existent item
+    resp = client.get('/items/nonexistent')
+    assert resp.status_code == 404
+    assert 'detail' in resp.json()
+
