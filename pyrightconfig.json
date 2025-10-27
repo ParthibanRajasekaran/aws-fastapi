@@ -1,0 +1,18 @@
+{
+  "include": [
+    "lambda-dynamo",
+    "lambda-s3",
+    "tests"
+  ],
+  "exclude": [
+    "**/__pycache__",
+    ".venv",
+    ".aws-sam"
+  ],
+  "reportMissingImports": true,
+  "reportMissingTypeStubs": false,
+  "reportAttributeAccessIssue": false,
+  "pythonVersion": "3.12",
+  "pythonPlatform": "Linux",
+  "typeCheckingMode": "basic"
+}
