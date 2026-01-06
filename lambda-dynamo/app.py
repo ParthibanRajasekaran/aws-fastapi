@@ -12,7 +12,11 @@ app = FastAPI()
 
 # Initialize DynamoDB resource outside handler for connection reuse
 # This leverages Lambda execution environment reuse for better performance
-dynamodb = boto3.resource("dynamodb", region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"))
+# Region is required to be set via AWS_DEFAULT_REGION environment variable
+dynamodb = boto3.resource(
+    "dynamodb", 
+    region_name=os.environ.get("AWS_DEFAULT_REGION") or os.environ.get("AWS_REGION")
+)
 table = dynamodb.Table(os.environ.get("TABLE_NAME", "ItemsTable"))
 
 @app.post("/items")

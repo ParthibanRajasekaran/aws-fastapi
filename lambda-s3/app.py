@@ -12,7 +12,11 @@ app = FastAPI()
 
 # Initialize S3 client outside handler for connection reuse
 # This leverages Lambda execution environment reuse for better performance
-s3 = boto3.client("s3", region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"))
+# Region is required to be set via AWS_DEFAULT_REGION environment variable
+s3 = boto3.client(
+    "s3", 
+    region_name=os.environ.get("AWS_DEFAULT_REGION") or os.environ.get("AWS_REGION")
+)
 bucket_name = os.environ.get("BUCKET_NAME", "my-demo-bucket")
 bucket_owner = os.environ.get("BUCKET_OWNER")  # Expected bucket owner account ID
 
