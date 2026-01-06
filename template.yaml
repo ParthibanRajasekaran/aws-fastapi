@@ -5,11 +5,15 @@ Description: FastAPI Lambda functions for DynamoDB and S3 operations
 Globals:
   Function:
     Timeout: 30
-    Runtime: python3.12
+    Runtime: python3.13
     MemorySize: 256
+    Architectures:
+      - arm64
     Environment:
       Variables:
         AWS_DEFAULT_REGION: !Ref AWS::Region
+        POWERTOOLS_SERVICE_NAME: fastapi-lambda
+        LOG_LEVEL: INFO
 
 Parameters:
   Environment:

@@ -2,3 +2,4 @@ fastapi
 mangum
 boto3
 uvicorn[standard]
+aws-lambda-powertools[all]
