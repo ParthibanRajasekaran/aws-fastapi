@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Response, HTTPException
 from mangum import Mangum
 import boto3, os
+import mimetypes
 
 app = FastAPI()
 s3 = boto3.client("s3")  # region will be picked from environment or AWS config
@@ -16,8 +17,17 @@ def get_file(file_key: str):
         obj = s3.get_object(**get_params)
     except s3.exceptions.NoSuchKey:
         raise HTTPException(status_code=404, detail="File not found")
-    # Assuming text file for simplicity; if binary, we might return Base64 or set StreamingResponse
+    
     content = obj['Body'].read()
-    return Response(content, media_type="text/plain")
+    
+    # Determine content type from S3 metadata or file extension
+    content_type = obj.get('ContentType')
+    if not content_type or content_type == 'binary/octet-stream':
+        # Guess content type from file extension
+        content_type, _ = mimetypes.guess_type(file_key)
+        if not content_type:
+            content_type = 'application/octet-stream'
+    
+    return Response(content, media_type=content_type)
 
 handler = Mangum(app)
